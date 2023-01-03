@@ -1,0 +1,131 @@
+#Slack API에서 토큰을 부여 받는다
+#xoxb-로 시작
+
+#!/usr/bin/python #파이썬 경로
+import sys
+import getpass
+import platform
+import argparse
+from pathlib import Path
+from slack_sdk import WebClient #없으면 설치
+
+__version__ = '1.0.1'
+
+SLACK_API_TOKEN = 'token'
+
+PROG = 'slackbot'
+DEBUG = False
+
+EXAMPLE_TEXT = """
+example:
+  # Find out a list of users and channels you can send messages.
+  {prog} -l
+  {prog} --list
+
+  # Send a message to the destination.
+  {prog} -d '#general' -m 'This is an example messege to send.'
+  {prog} -d '@username' -m 'Message to be sent to user.name'
+
+  # Even you can send multiple messages...
+  {prog} -d '#general' -m 'Trivial message 1' -m 'Trivial message 2'
+  {prog} -d '@username' \\
+     -m 'message1' \\
+     -m 'message2' \\
+     -m 'message3'
+
+  # Or you can send the same message to multiple destinations.
+  {prog} -d '#general' -d #random -m 'Trivial message'
+""".format(prog=PROG)
+
+NO_ARGS_TEXT = """
+You should use any optional argument with `{prog}`.
+Find out how to use it with `-h` or `--help` argument.
+
+    {prog} -h
+    {prog} --help
+""".strip().format(prog=PROG)
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(
+        prog=PROG,
+        description='',
+        epilog=EXAMPLE_TEXT,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+
+    parser.add_argument(
+        '-l', '--list', action='store_true',
+        help='Whether to show a list of users and channels')
+
+    parser.add_argument(
+        '-d', '--dest', type=str, action='append',
+        help=('Destination(s) you\'d like to send message(s) '
+              '(e.g., #general, @username)'))
+
+    parser.add_argument(
+        '-m', '--msg', type=str, action='append',
+        help='Message(s) to be sent')
+
+    parser.add_argument(
+        '-v', '--version', action='version',
+        version='%(prog)s {version} from {path}'
+                .format(version=__version__,
+                        path=str(Path(__file__).absolute())),
+        help='Show the version number')
+
+    args = parser.parse_args()
+
+    if DEBUG:
+        print('dest:', args.dest)
+        print('msg: ', args.msg)
+        print('list:', args.list)
+
+    if not any([args.dest, args.msg, args.list]):
+        print(NO_ARGS_TEXT, file=sys.stderr)
+        sys.exit(1)
+
+
+    slack = WebClient(SLACK_API_TOKEN) if SLACK_API_TOKEN else None
+
+    if args.list:
+        members = slack.users_list()
+        channels = slack.conversations_list()
+
+        print('Users:')
+        members = members['members']
+        for member in members:
+            if member['is_bot'] or \
+                    member['name'] == 'slackbot' or \
+                    'is_admin' not in member:
+                continue
+
+            print('-', '@' + member['name'],
+                  ('(' + member['real_name'] + ')') if 'real_name' in member
+                  else '')
+
+        print()
+
+        print('Channels:')
+        channels = sorted(channels['channels'], key=lambda x: x['name'])
+        for channel in channels:
+            print('-', '#',channel['name'])
+
+        print()
+
+    elif args.dest and args.msg:
+        # Retrieve the user and device name
+        user = getpass.getuser()
+        device = platform.node()
+
+
+        # Make a username for the message(s)
+        if user == 'root':
+            username = 'ServerBot@' + device
+        else:
+            username = user + '@' + device + ' (using ServerBot)'
+
+        # Send message(s)
+        for dest in args.dest:
+            for msg in args.msg:
+                slack.chat_postMessage(channel=dest, text=msg, username=username) 
+                
+#/usr/bin 에 slackbot이라는 이름으로 파일을 저장하면 Shell 또는 Python Code에서 사용할 수 있음
